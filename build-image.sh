@@ -16,19 +16,10 @@ ROOTFS=/rootfs
 MNT=/mnt/disk
 TARGETARCH=${TARGETARCH:-amd64}
 
-# ── Resolve arch-specific GRUB targets ───────────────────────────────────────
+# ── Resolve arch-specific GRUB EFI target ────────────────────────────────────
 case "${TARGETARCH}" in
-  amd64)
-    GRUB_EFI_TARGET="x86_64-efi"
-    GRUB_BIOS_TARGET="i386-pc"
-    INSTALL_BIOS=true
-    ;;
-  arm64)
-    GRUB_EFI_TARGET="arm64-efi"
-    # arm64 has no BIOS/legacy boot — EFI only
-    GRUB_BIOS_TARGET=""
-    INSTALL_BIOS=false
-    ;;
+  amd64) GRUB_EFI_TARGET="x86_64-efi" ;;
+  arm64) GRUB_EFI_TARGET="arm64-efi"  ;;
   *)
     echo "Unsupported TARGETARCH: ${TARGETARCH}"
     exit 1
@@ -120,13 +111,6 @@ grub-install \
   --no-nvram \
   --removable
 
-if [[ "${INSTALL_BIOS}" == "true" ]]; then
-  echo ">>> Installing GRUB BIOS (${GRUB_BIOS_TARGET})..."
-  grub-install \
-    --target="${GRUB_BIOS_TARGET}" \
-    --boot-directory="${MNT}/boot" \
-    "${LOOP}"
-fi
 
 # ── Generate grub.cfg ─────────────────────────────────────────────────────────
 # Write grub.cfg directly rather than using update-grub: inside the chroot

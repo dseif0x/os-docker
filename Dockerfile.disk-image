@@ -1,24 +1,21 @@
 # syntax=docker/dockerfile:1.4-labs
 
-FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS packager
+FROM debian:bookworm-slim AS packager
 
 ARG TARGETARCH
-ARG BUILDARCH
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
- && case "${BUILDARCH}" in \
+ && case "${TARGETARCH}" in \
       amd64) \
         apt-get install -y --no-install-recommends \
-          grub-pc-bin \
           grub-efi-amd64-bin \
-          grub-efi-arm64-bin \
         ;; \
       arm64) \
         apt-get install -y --no-install-recommends \
           grub-efi-arm64-bin \
         ;; \
-      *) echo "Unsupported BUILDARCH: ${BUILDARCH}" && exit 1 ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
     esac \
  && apt-get install -y --no-install-recommends \
       # Disk tools
