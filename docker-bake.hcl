@@ -1,6 +1,10 @@
 # docker-bake.hcl
 
 # ── Variables ─────────────────────────────────────────────────────────────────
+variable "DISTRO" {
+  default = "debian"
+}
+
 variable "IMAGE_SIZE" {
   default = "4G"
 }
@@ -27,7 +31,7 @@ group "default" {
 target "rootfs" {
   inherits   = ["linux_platforms"]
   context    = "."
-  dockerfile = "debian/Dockerfile"
+  dockerfile = "${DISTRO}/Dockerfile"
   target     = "rootfs"
   output     = []
 }
@@ -45,8 +49,8 @@ target "disk-image" {
   entitlements = ["security.insecure"]
 
   args = {
-    IMG_SIZE   = IMAGE_SIZE
+    IMG_SIZE = IMAGE_SIZE
   }
 
-  output = ["${OUTPUT_DIR}"]
+  output = ["${OUTPUT_DIR}/${DISTRO}"]
 }
