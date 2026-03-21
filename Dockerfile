@@ -15,7 +15,6 @@ RUN case "${TARGETARCH}" in \
  && apt-get install -y --no-install-recommends \
       "${KERNEL_PKG}" \
       systemd systemd-sysv dbus \
-      grub2-common \
       bash coreutils util-linux mount udev \
       iproute2 iputils-ping \
       curl ca-certificates \
