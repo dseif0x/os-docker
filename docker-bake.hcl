@@ -27,7 +27,7 @@ group "default" {
 target "rootfs" {
   inherits   = ["linux_platforms"]
   context    = "."
-  dockerfile = "Dockerfile"
+  dockerfile = "debian/Dockerfile"
   target     = "rootfs"
   output     = []
 }
