@@ -18,7 +18,7 @@ qemu-system-x86_64 \
 -cpu qemu64 \
 -smp 2 \
 -m 2048 \
--drive "if=pflash,format=raw,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd ,readonly=on" \
+-drive "if=pflash,format=raw,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd,readonly=on" \
 -drive "if=virtio,format=raw,file=output/linux_amd64/disk.img" \
 -nographic \
 -serial mon:stdio
