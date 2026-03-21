@@ -151,6 +151,41 @@ menuentry "Debian GNU/Linux" {
 }
 GRUBCFG
 
+# ── Shrink image to fit + 10% ─────────────────────────────────────────────────
+echo ">>> Shrinking image..."
+
+# Unmount everything before resizing the filesystem
+umount "${MNT}/boot/efi" 2>/dev/null || true
+umount "${MNT}/dev"      2>/dev/null || true
+umount "${MNT}/proc"     2>/dev/null || true
+umount "${MNT}/sys"      2>/dev/null || true
+umount "${MNT}"          2>/dev/null || true
+
+# Shrink the ext4 filesystem to minimum size, then expand to minimum + 10%
+e2fsck -fy "${ROOT}"
+MIN_BLOCKS=$(resize2fs -P "${ROOT}" 2>&1 | awk '/Estimated minimum size/ {print $NF}')
+BLOCK_SIZE=$(tune2fs -l "${ROOT}" | awk '/^Block size:/ {print $3}')
+TARGET_BLOCKS=$(( (MIN_BLOCKS * 11 + 9) / 10 ))   # ceil(min * 1.1)
+resize2fs "${ROOT}" "${TARGET_BLOCKS}"
+
+# Shrink partition 2 in the GPT to the new filesystem size
+PART2_START=$(sgdisk -i 2 "${LOOP}" | awk '/First sector:/ {print $3}')
+TARGET_SECTORS=$(( (TARGET_BLOCKS * BLOCK_SIZE + 511) / 512 ))  # ceil to sector
+PART2_END=$(( PART2_START + TARGET_SECTORS - 1 ))
+sgdisk --delete=2 "${LOOP}"
+sgdisk \
+  --new=2:"${PART2_START}":"${PART2_END}" \
+  --typecode=2:8300 \
+  --change-name=2:"Linux root" \
+  "${LOOP}"
+
+# Detach loop/dm devices, truncate image, then relocate backup GPT
+kpartx -dv "${LOOP}" 2>/dev/null || true
+losetup -d "${LOOP}" 2>/dev/null || true
+NEW_SECTORS=$(( PART2_END + 1 + 33 ))   # +33 sectors for backup GPT (32 entries + header)
+truncate -s $(( NEW_SECTORS * 512 )) "${IMG}"
+sgdisk -e "${IMG}"   # move backup GPT to the new end of disk
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ">>> Disk image ready: ${IMG} (${TARGETARCH})"
 du -sh "${IMG}"
