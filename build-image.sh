@@ -129,9 +129,27 @@ if [[ "${INSTALL_BIOS}" == "true" ]]; then
 fi
 
 # ── Generate grub.cfg ─────────────────────────────────────────────────────────
-# update-grub needs the chroot environment to find kernels and generate paths.
+# Write grub.cfg directly rather than using update-grub: inside the chroot
+# grub-probe sees the build-time device (/dev/mapper/loopNpX) and emits that
+# as root=, which is meaningless on the target machine. Using the UUID we
+# already have guarantees the correct root= on every boot.
 echo ">>> Generating grub.cfg..."
-chroot "${MNT}" update-grub
+KERNEL=$(ls "${MNT}/boot/vmlinuz-"* 2>/dev/null | sort -V | tail -1)
+INITRD=$(ls "${MNT}/boot/initrd.img-"* 2>/dev/null | sort -V | tail -1)
+KERNEL="${KERNEL#"${MNT}"}"   # strip mount prefix → /boot/vmlinuz-…
+INITRD="${INITRD#"${MNT}"}"
+
+mkdir -p "${MNT}/boot/grub"
+cat > "${MNT}/boot/grub/grub.cfg" <<GRUBCFG
+set default=0
+set timeout=5
+
+menuentry "Debian GNU/Linux" {
+    search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+    linux  ${KERNEL} root=UUID=${ROOT_UUID} ro quiet
+    initrd ${INITRD}
+}
+GRUBCFG
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ">>> Disk image ready: ${IMG} (${TARGETARCH})"
