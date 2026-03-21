@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1.4-labs
+
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS packager
+
+ARG TARGETARCH
+ARG BUILDARCH
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && case "${BUILDARCH}" in \
+      amd64) \
+        apt-get install -y --no-install-recommends \
+          grub-pc-bin \
+          grub-efi-amd64-bin \
+          grub-efi-arm64-bin \
+        ;; \
+      arm64) \
+        apt-get install -y --no-install-recommends \
+          grub-efi-arm64-bin \
+        ;; \
+      *) echo "Unsupported BUILDARCH: ${BUILDARCH}" && exit 1 ;; \
+    esac \
+ && apt-get install -y --no-install-recommends \
+      # Disk tools
+      gdisk dosfstools e2fsprogs \
+      # Filesystem / process tools
+      mount util-linux coreutils rsync \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Pull the rootfs built for the TARGET arch in stage 1.
+# BuildKit resolves the correct platform variant automatically.
+COPY --from=rootfs / /rootfs/
+
+COPY build-image.sh /build-image.sh
+RUN chmod +x /build-image.sh
+
+RUN mkdir -p /output
+
+CMD ["/build-image.sh"]
+
+FROM scratch
+COPY --from=packager /output/ ./
