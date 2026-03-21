@@ -118,8 +118,12 @@ grub-install \
 # as root=, which is meaningless on the target machine. Using the UUID we
 # already have guarantees the correct root= on every boot.
 echo ">>> Generating grub.cfg..."
-KERNEL=$(ls "${MNT}/boot/vmlinuz-"* 2>/dev/null | sort -V | tail -1)
-INITRD=$(ls "${MNT}/boot/initrd.img-"* 2>/dev/null | sort -V | tail -1)
+# find works for both Debian (vmlinuz-6.x, initrd.img-6.x)
+# and Alpine (vmlinuz-lts, initramfs-lts)
+KERNEL=$(find "${MNT}/boot" -maxdepth 1 -name 'vmlinuz*' ! -name '*.old' | sort -V | tail -1)
+INITRD=$(find "${MNT}/boot" -maxdepth 1 \( -name 'initrd*' -o -name 'initramfs*' \) ! -name '*.old' | sort -V | tail -1)
+[ -n "${KERNEL}" ] || { echo "ERROR: no kernel found in ${MNT}/boot"; exit 1; }
+[ -n "${INITRD}" ] || { echo "ERROR: no initrd/initramfs found in ${MNT}/boot"; exit 1; }
 KERNEL="${KERNEL#"${MNT}"}"   # strip mount prefix → /boot/vmlinuz-…
 INITRD="${INITRD#"${MNT}"}"
 
@@ -128,7 +132,7 @@ cat > "${MNT}/boot/grub/grub.cfg" <<GRUBCFG
 set default=0
 set timeout=5
 
-menuentry "Debian GNU/Linux" {
+menuentry "Linux" {
     search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
     linux  ${KERNEL} root=UUID=${ROOT_UUID} ro quiet
     initrd ${INITRD}

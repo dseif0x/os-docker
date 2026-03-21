@@ -6,7 +6,7 @@ qemu-system-aarch64 \
 -smp 4 \
 -m 2048 \
 -drive "if=pflash,format=raw,file=/opt/homebrew/share/qemu/edk2-aarch64-code.fd,readonly=on" \
--drive "if=virtio,format=raw,file=output/linux_arm64/disk.img" \
+-drive "if=virtio,format=raw,file=output/alpine/disk.img" \
 -nographic \
 -serial mon:stdio
 ```
