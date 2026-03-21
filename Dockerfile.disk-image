@@ -22,7 +22,7 @@ RUN apt-get update \
     esac \
  && apt-get install -y --no-install-recommends \
       # Disk tools
-      gdisk dosfstools e2fsprogs \
+      gdisk dosfstools e2fsprogs kpartx \
       # Filesystem / process tools
       mount util-linux coreutils rsync \
  && apt-get clean && rm -rf /var/lib/apt/lists/*

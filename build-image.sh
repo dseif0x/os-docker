@@ -51,9 +51,14 @@ sgdisk \
 
 # ── Attach loop device ────────────────────────────────────────────────────────
 echo ">>> Setting up loop device..."
-LOOP=$(losetup --find --show --partscan "${IMG}")
-ESP="${LOOP}p1"
-ROOT="${LOOP}p2"
+LOOP=$(losetup --find --show "${IMG}")
+# In containers udev is not running, so kernel partition nodes (/dev/loopNpX)
+# never appear. kpartx creates device-mapper nodes (/dev/mapper/loopNpX) that
+# work reliably without udev.
+kpartx -av "${LOOP}"
+LOOPNAME=$(basename "${LOOP}")   # e.g. loop2
+ESP="/dev/mapper/${LOOPNAME}p1"
+ROOT="/dev/mapper/${LOOPNAME}p2"
 
 cleanup() {
   echo ">>> Cleanup..."
@@ -62,6 +67,7 @@ cleanup() {
   umount "${MNT}/proc"     2>/dev/null || true
   umount "${MNT}/sys"      2>/dev/null || true
   umount "${MNT}"          2>/dev/null || true
+  kpartx -dv "${LOOP}"     2>/dev/null || true
   losetup -d "${LOOP}"     2>/dev/null || true
 }
 trap cleanup EXIT
