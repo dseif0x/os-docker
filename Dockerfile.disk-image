@@ -36,7 +36,7 @@ RUN chmod +x /build-image.sh
 
 RUN mkdir -p /output
 
-CMD ["/build-image.sh"]
+RUN --security=insecure /build-image.sh
 
 FROM scratch
 COPY --from=packager /output/ ./

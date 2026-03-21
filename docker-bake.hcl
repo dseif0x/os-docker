@@ -42,6 +42,8 @@ target "disk-image" {
     "rootfs" = "target:rootfs"
   }
 
+  entitlements = ["security.insecure"]
+
   args = {
     IMG_SIZE   = IMAGE_SIZE
   }
