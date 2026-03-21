@@ -91,6 +91,8 @@ rsync -aHAX \
   "${ROOTFS}/" "${MNT}/"
 
 # ── Bind-mount virtual filesystems for chroot ─────────────────────────────────
+# rsync excluded these dirs, so ensure they exist before mounting.
+mkdir -p "${MNT}/proc" "${MNT}/sys" "${MNT}/dev" "${MNT}/run"
 mount --bind /proc "${MNT}/proc"
 mount --bind /sys  "${MNT}/sys"
 mount --bind /dev  "${MNT}/dev"
@@ -106,22 +108,28 @@ UUID=${ESP_UUID}   /boot/efi     vfat    umask=0077         0      2
 FSTAB
 
 # ── Install GRUB ─────────────────────────────────────────────────────────────
+# Run grub-install from the packager (not chroot) so it can find its modules
+# under /usr/lib/grub/. Point it at the mounted rootfs via --boot-directory
+# and --efi-directory.
 echo ">>> Installing GRUB EFI (${GRUB_EFI_TARGET})..."
-chroot "${MNT}" grub-install \
+grub-install \
   --target="${GRUB_EFI_TARGET}" \
-  --efi-directory=/boot/efi \
+  --efi-directory="${MNT}/boot/efi" \
+  --boot-directory="${MNT}/boot" \
   --bootloader-id=debian \
   --no-nvram \
   --removable
 
 if [[ "${INSTALL_BIOS}" == "true" ]]; then
   echo ">>> Installing GRUB BIOS (${GRUB_BIOS_TARGET})..."
-  chroot "${MNT}" grub-install \
+  grub-install \
     --target="${GRUB_BIOS_TARGET}" \
+    --boot-directory="${MNT}/boot" \
     "${LOOP}"
 fi
 
 # ── Generate grub.cfg ─────────────────────────────────────────────────────────
+# update-grub needs the chroot environment to find kernels and generate paths.
 echo ">>> Generating grub.cfg..."
 chroot "${MNT}" update-grub
 

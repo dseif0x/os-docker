@@ -23,6 +23,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       # Disk tools
       gdisk dosfstools e2fsprogs kpartx \
+      # GRUB tools (grub-install, grub-mkimage) — modules come from the arch-specific -bin pkgs above
+      grub2-common \
       # Filesystem / process tools
       mount util-linux coreutils rsync \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
