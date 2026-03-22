@@ -47,7 +47,7 @@ func writeGRUBConfig(efiFS filesystem.FileSystem, distro, kernelRel, initrdRel s
 
 	uuidStr := rootFSUUID.String()
 	cfg := fmt.Sprintf(
-		"set default=0\nset timeout=5\n\nmenuentry %q {\n"+
+		"set default=0\nset timeout=0\n\nmenuentry %q {\n"+
 			"    search --no-floppy --fs-uuid --set=root %s\n"+
 			"    linux  %s root=UUID=%s rootfstype=ext4 ro quiet\n"+
 			"    initrd %s\n}\n",
