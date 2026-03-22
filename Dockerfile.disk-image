@@ -1,34 +1,40 @@
-# syntax=docker/dockerfile:1
+# Each GRUB EFI binary is built in a stage pinned to its native platform so
+# that grub-efi-*-bin packages are always available without foreign-arch tricks.
+# BuildKit emulates the non-native stage via QEMU when needed.
+FROM --platform=linux/amd64 debian:bookworm-slim AS grub-x64-builder
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends grub2-common grub-efi-amd64-bin \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN grub-mkimage -O x86_64-efi -o /bootx64.efi -p /boot/grub \
+      -d /usr/lib/grub/x86_64-efi \
+      part_gpt fat ext2 normal configfile \
+      search search_fs_uuid linux echo reboot gzio \
+      all_video font gfxterm
 
-FROM golang:1.25-bookworm AS image-packer-builder
+FROM --platform=linux/arm64 debian:bookworm-slim AS grub-aa64-builder
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends grub2-common grub-efi-arm64-bin \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN grub-mkimage -O arm64-efi -o /bootaa64.efi -p /boot/grub \
+      -d /usr/lib/grub/arm64-efi \
+      part_gpt fat ext2 normal configfile \
+      search search_fs_uuid linux echo reboot gzio \
+      all_video font gfxterm
+
+FROM --platform=${BUILDPLATFORM} golang:1.25-bookworm AS image-packer-builder
 
 WORKDIR /src/image-packer
 COPY image-packer/go.mod image-packer/go.sum ./
 RUN go mod download
 COPY image-packer/ ./
+COPY --from=grub-x64-builder  /bootx64.efi  efi/bootx64.efi
+COPY --from=grub-aa64-builder /bootaa64.efi efi/bootaa64.efi
+
 RUN CGO_ENABLED=0 go build -o /image-packer .
 
-FROM debian:bookworm-slim AS packager
+FROM --platform=${BUILDPLATFORM} debian:bookworm-slim AS packager
 
 ARG TARGETARCH
-ARG DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update \
- && case "${TARGETARCH}" in \
-      amd64) \
-        apt-get install -y --no-install-recommends \
-          grub-efi-amd64-bin \
-        ;; \
-      arm64) \
-        apt-get install -y --no-install-recommends \
-          grub-efi-arm64-bin \
-        ;; \
-      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
-    esac \
- && apt-get install -y --no-install-recommends \
-      # GRUB tools (grub-mkimage) — modules come from the arch-specific -bin pkgs above
-      grub2-common \
- && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Pull the rootfs built for the TARGET arch in stage 1.
 # BuildKit resolves the correct platform variant automatically.

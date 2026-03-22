@@ -1,52 +1,35 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
-	"os"
-	"os/exec"
 
 	"github.com/diskfs/go-diskfs/filesystem"
 	"github.com/google/uuid"
 )
 
-// grubModules is the list of GRUB modules embedded into the self-contained EFI binary.
-var grubModules = []string{
-	"part_gpt", "fat", "ext2", "normal", "configfile",
-	"search", "search_fs_uuid", "linux", "echo", "reboot", "gzio",
-	"all_video", "font", "gfxterm",
-}
+// EFI binaries are pre-built by grub-mkimage in the Docker builder stage and
+// embedded here, so the packager container needs no tools at runtime.
+//
+//go:embed efi/bootx64.efi
+var grubEFIx64 []byte
 
-// buildGRUBEFI runs grub-mkimage to compile a self-contained EFI binary and
-// writes it into the FAT32 filesystem at EFI/BOOT/<efiBootFilename>.
-// -p /boot/grub tells GRUB where to look for grub.cfg on the EFI partition.
+//go:embed efi/bootaa64.efi
+var grubEFIaa64 []byte
+
+// buildGRUBEFI writes the pre-built GRUB EFI binary for grubArch into the
+// FAT32 filesystem at EFI/BOOT/<efiBootFilename>.
 func buildGRUBEFI(efiFS filesystem.FileSystem, grubArch, efiBootFilename string) error {
-	fmt.Printf(">>> Building GRUB EFI binary (%s)...\n", grubArch)
+	fmt.Printf(">>> Writing GRUB EFI binary (%s)...\n", grubArch)
 
-	tmpEFI, err := os.CreateTemp("", "grub-*.efi")
-	if err != nil {
-		return fmt.Errorf("temp file for grub efi: %w", err)
-	}
-	tmpEFIPath := tmpEFI.Name()
-	tmpEFI.Close()
-	defer os.Remove(tmpEFIPath)
-
-	args := append([]string{
-		"-O", grubArch,
-		"-o", tmpEFIPath,
-		"-p", "/boot/grub",
-		"-d", "/usr/lib/grub/" + grubArch,
-	}, grubModules...)
-	cmd := exec.Command("grub-mkimage", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("grub-mkimage: %w", err)
-	}
-
-	fmt.Println(">>> Writing GRUB EFI binary to FAT32...")
-	efiData, err := os.ReadFile(tmpEFIPath)
-	if err != nil {
-		return fmt.Errorf("read grub efi binary: %w", err)
+	var efiData []byte
+	switch grubArch {
+	case "x86_64-efi":
+		efiData = grubEFIx64
+	case "arm64-efi":
+		efiData = grubEFIaa64
+	default:
+		return fmt.Errorf("no embedded EFI binary for arch %q", grubArch)
 	}
 	if err := efiFS.Mkdir("/EFI"); err != nil {
 		return fmt.Errorf("fat32 mkdir /EFI: %w", err)
@@ -62,13 +45,13 @@ func buildGRUBEFI(efiFS filesystem.FileSystem, grubArch, efiBootFilename string)
 func writeGRUBConfig(efiFS filesystem.FileSystem, distro, kernelRel, initrdRel string, rootFSUUID uuid.UUID) error {
 	fmt.Println(">>> Writing grub.cfg to FAT32...")
 
-	uuidLower := rootFSUUID.String()
+	uuidStr := rootFSUUID.String()
 	cfg := fmt.Sprintf(
 		"set default=0\nset timeout=5\n\nmenuentry %q {\n"+
 			"    search --no-floppy --fs-uuid --set=root %s\n"+
 			"    linux  %s root=UUID=%s rootfstype=ext4 ro quiet\n"+
 			"    initrd %s\n}\n",
-		distro, uuidLower, kernelRel, uuidLower, initrdRel,
+		distro, uuidStr, kernelRel, uuidStr, initrdRel,
 	)
 	if err := efiFS.Mkdir("/boot"); err != nil {
 		return fmt.Errorf("fat32 mkdir /boot: %w", err)
