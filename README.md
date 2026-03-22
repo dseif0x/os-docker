@@ -48,7 +48,9 @@ qemu-system-aarch64 \
   -drive "if=pflash,format=raw,file=/opt/homebrew/share/qemu/edk2-aarch64-code.fd,readonly=on" \
   -drive "if=virtio,format=raw,file=output/alpine/linux_arm64/disk.img" \
   -nographic \
-  -serial mon:stdio
+  -serial mon:stdio \
+  -netdev user,id=net0 \
+  -device virtio-net-pci,netdev=net0
 ```
 
 ### amd64 (software emulation on Apple Silicon — slow)
