@@ -163,7 +163,7 @@ func buildDiskImage() error {
 	fstab := fmt.Sprintf(
 		"# <file system>                           <mount point>  <type>  <options>           <dump>  <pass>\n"+
 			"UUID=%-36s  /              ext4    errors=remount-ro   0       1\n"+
-			"PARTUUID=%-32s  /boot/efi      vfat    umask=0077          0       2\n",
+			"PARTUUID=%-32s  /boot/efi      vfat    umask=0077,nofail   0       2\n",
 		rootFSUUID.String(),
 		efiPartGUID.String(),
 	)
