@@ -13,6 +13,7 @@ set -euo pipefail
 IMG=/output/disk.img
 IMG_SIZE=${IMG_SIZE:-4G}
 EFI_SIZE=${EFI_SIZE:-512M}
+DISTRO=${DISTRO:-linux}
 ROOTFS=/rootfs
 MNT=/mnt/disk
 TARGETARCH=${TARGETARCH:-amd64}
@@ -133,7 +134,7 @@ cat > "${MNT}/boot/grub/grub.cfg" <<GRUBCFG
 set default=0
 set timeout=5
 
-menuentry "Linux" {
+menuentry "${DISTRO}" {
     search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
     linux  ${KERNEL} root=UUID=${ROOT_UUID} rootfstype=ext4 ro quiet
     initrd ${INITRD}

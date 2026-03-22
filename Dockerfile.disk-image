@@ -36,6 +36,7 @@ RUN chmod +x /build-image.sh
 RUN mkdir -p /output
 
 ARG EFI_SIZE=512M
+ARG DISTRO=linux
 RUN --security=insecure /build-image.sh
 
 FROM scratch
