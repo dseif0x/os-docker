@@ -22,4 +22,9 @@ RUN case "${TARGETARCH}" in \
  && rm -rf /var/lib/apt/lists/*
 
 RUN systemctl enable getty@tty1.service
+RUN systemctl enable systemd-networkd.service
+
+RUN printf '[Match]\nType=ether\n\n[Network]\nDHCP=yes\n' \
+    > /etc/systemd/network/20-eth.network
+
 RUN echo "root:root" | chpasswd
