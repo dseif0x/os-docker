@@ -1,5 +1,8 @@
 name: Build
 
+env:
+  DOCKER_BUILD_SUMMARY: false
+
 on:
   push:
     branches: [main]
@@ -9,20 +12,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate matrix
+        id: matrix
+        uses: docker/bake-action/subaction/matrix@v6
+        with:
+          target: disk-image
+          fields: target,platforms
+
   build:
+    needs: prepare
+    runs-on: ${{ startsWith(matrix.platforms, 'linux/arm') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            platform: linux/amd64
-            runs-on: ubuntu-latest
-          - arch: arm64
-            platform: linux/arm64
-            runs-on: ubuntu-24.04-arm
-
-    runs-on: ${{ matrix.runs-on }}
-
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,15 +39,26 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build disk images
+      - name: Derive distro and arch
+        id: info
+        run: |
+          distro="${{ matrix.target }}"
+          distro="${distro#disk-image-}"
+          arch="${{ matrix.platforms }}"
+          arch="${arch#linux/}"
+          echo "distro=$distro" >> $GITHUB_OUTPUT
+          echo "arch=$arch" >> $GITHUB_OUTPUT
+
+      - name: Build disk image
         uses: docker/bake-action@v6
         with:
+          targets: ${{ matrix.target }}
           allow: security.insecure
           set: |
-            *.platform=${{ matrix.platform }}
+            *.platform=${{ matrix.platforms }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: disk-images-${{ matrix.arch }}
-          path: output/
+          name: disk-images-${{ steps.info.outputs.distro }}-${{ steps.info.outputs.arch }}
+          path: output/${{ steps.info.outputs.distro }}/
           compression-level: 3
