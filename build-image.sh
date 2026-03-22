@@ -12,6 +12,7 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────────────────────
 IMG=/output/disk.img
 IMG_SIZE=${IMG_SIZE:-4G}
+EFI_SIZE=${EFI_SIZE:-512M}
 ROOTFS=/rootfs
 MNT=/mnt/disk
 TARGETARCH=${TARGETARCH:-amd64}
@@ -36,7 +37,7 @@ truncate -s "${IMG_SIZE}" "${IMG}"
 echo ">>> Partitioning..."
 sgdisk --zap-all "${IMG}"
 sgdisk \
-  --new=1:0:+512M --typecode=1:ef00 --change-name=1:"EFI System" \
+  --new=1:0:+${EFI_SIZE} --typecode=1:ef00 --change-name=1:"EFI System" \
   --new=2:0:0     --typecode=2:8300 --change-name=2:"Linux root" \
   "${IMG}"
 
