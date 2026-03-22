@@ -19,11 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Generate matrix
-        id: matrix
+        id: raw
         uses: docker/bake-action/subaction/matrix@v6
         with:
           target: disk-image
           fields: target,platforms
+      - name: Filter to disk-image targets only
+        id: matrix
+        run: |
+          echo "matrix=$(echo '${{ steps.raw.outputs.matrix }}' | jq '[.[] | select(.target | startswith("disk-image-"))]')" >> $GITHUB_OUTPUT
 
   build:
     needs: prepare
