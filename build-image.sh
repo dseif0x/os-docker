@@ -134,7 +134,7 @@ set timeout=5
 
 menuentry "Linux" {
     search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
-    linux  ${KERNEL} root=UUID=${ROOT_UUID} ro quiet
+    linux  ${KERNEL} root=UUID=${ROOT_UUID} rootfstype=ext4 ro quiet
     initrd ${INITRD}
 }
 GRUBCFG
