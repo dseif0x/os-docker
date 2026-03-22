@@ -53,3 +53,32 @@ target "disk-image" {
 
   output = ["./output/${distro}"]
 }
+
+# ── Raspberry Pi (arm64 only) ─────────────────────────────────────────────────
+
+target "rootfs-raspbian" {
+  context    = "."
+  dockerfile = "raspbian/Dockerfile"
+  platforms  = ["linux/arm64"]
+  output     = []
+}
+
+target "disk-image-raspbian" {
+  platforms  = ["linux/arm64"]
+  context    = "."
+  dockerfile = "Dockerfile.disk-image"
+
+  contexts = {
+    "rootfs" = "target:rootfs-raspbian"
+  }
+
+  entitlements = ["security.insecure"]
+
+  args = {
+    IMG_SIZE = "4G"
+    EFI_SIZE = "256M"
+    DISTRO   = "raspbian"
+  }
+
+  output = ["./output/raspbian"]
+}

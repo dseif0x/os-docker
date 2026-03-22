@@ -3,25 +3,21 @@
 FROM debian:bookworm-slim AS packager
 
 ARG TARGETARCH
+ARG DISTRO=linux
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
- && case "${TARGETARCH}" in \
-      amd64) \
-        apt-get install -y --no-install-recommends \
-          grub-efi-amd64-bin \
-        ;; \
-      arm64) \
-        apt-get install -y --no-install-recommends \
-          grub-efi-arm64-bin \
-        ;; \
-      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
-    esac \
+ && if [ "${DISTRO}" != "raspbian" ]; then \
+      case "${TARGETARCH}" in \
+        amd64) apt-get install -y --no-install-recommends grub-efi-amd64-bin ;; \
+        arm64) apt-get install -y --no-install-recommends grub-efi-arm64-bin ;; \
+        *) echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
+      esac && \
+      apt-get install -y --no-install-recommends grub2-common; \
+    fi \
  && apt-get install -y --no-install-recommends \
       # Disk tools
       gdisk dosfstools e2fsprogs kpartx \
-      # GRUB tools (grub-install, grub-mkimage) — modules come from the arch-specific -bin pkgs above
-      grub2-common \
       # Filesystem / process tools
       mount util-linux coreutils rsync \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -36,7 +32,6 @@ RUN chmod +x /build-image.sh
 RUN mkdir -p /output
 
 ARG EFI_SIZE=512M
-ARG DISTRO=linux
 RUN --security=insecure /build-image.sh
 
 FROM scratch
