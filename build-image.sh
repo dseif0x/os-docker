@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # build-image.sh — runs inside the packager container (needs security.insecure)
 # Produces /output/disk.img: a bootable GPT disk with:
-#   partition 1 — 512 MiB EFI System Partition  (FAT32, GRUB EFI)
+#   partition 1 — EFI/boot partition (FAT32)
+#                 alpine/debian: GRUB EFI  (mounted at /boot/efi)
+#                 raspbian:      RPi firmware + kernel  (mounted at /boot/firmware)
 #   partition 2 — remainder    Linux root         (ext4, rootfs)
 #
 # Respects:
 #   TARGETARCH  — amd64 | arm64  (set by BuildKit / bake, drives GRUB target)
+#   DISTRO      — alpine | debian | raspbian  (selects boot method)
 #   IMG_SIZE    — e.g. 4G (default), 8G, etc.
 set -euo pipefail
 
@@ -18,7 +21,13 @@ ROOTFS=/rootfs
 MNT=/mnt/disk
 TARGETARCH=${TARGETARCH:-amd64}
 
-# ── Resolve arch-specific GRUB EFI target ────────────────────────────────────
+# ── Resolve boot mount point and bootloader method ────────────────────────────
+case "${DISTRO}" in
+  raspbian) BOOT_MNT="${MNT}/boot/firmware" ;;
+  *)        BOOT_MNT="${MNT}/boot/efi"      ;;
+esac
+
+# ── Resolve arch-specific GRUB EFI target (used for non-raspbian only) ────────
 case "${TARGETARCH}" in
   amd64) GRUB_EFI_TARGET="x86_64-efi" ;;
   arm64) GRUB_EFI_TARGET="arm64-efi"  ;;
@@ -28,7 +37,11 @@ case "${TARGETARCH}" in
     ;;
 esac
 
-echo ">>> Building disk image for ${TARGETARCH} (GRUB EFI target: ${GRUB_EFI_TARGET})"
+if [ "${DISTRO}" = "raspbian" ]; then
+  echo ">>> Building disk image for ${TARGETARCH} (Raspberry Pi firmware boot)"
+else
+  echo ">>> Building disk image for ${TARGETARCH} (GRUB EFI target: ${GRUB_EFI_TARGET})"
+fi
 
 # ── Create sparse image ───────────────────────────────────────────────────────
 echo ">>> Creating ${IMG_SIZE} disk image..."
@@ -55,7 +68,7 @@ ROOT="/dev/mapper/${LOOPNAME}p2"
 
 cleanup() {
   echo ">>> Cleanup..."
-  umount "${MNT}/boot/efi" 2>/dev/null || true
+  umount "${BOOT_MNT}"  2>/dev/null || true
   umount "${MNT}/dev"      2>/dev/null || true
   umount "${MNT}/proc"     2>/dev/null || true
   umount "${MNT}/sys"      2>/dev/null || true
@@ -74,8 +87,8 @@ mkfs.ext4 -L root "${ROOT}"
 echo ">>> Mounting..."
 mkdir -p "${MNT}"
 mount "${ROOT}" "${MNT}"
-mkdir -p "${MNT}/boot/efi"
-mount "${ESP}" "${MNT}/boot/efi"
+mkdir -p "${BOOT_MNT}"
+mount "${ESP}" "${BOOT_MNT}"
 
 # ── Copy rootfs ───────────────────────────────────────────────────────────────
 echo ">>> Copying rootfs..."
@@ -93,44 +106,80 @@ mount --bind /dev  "${MNT}/dev"
 # ── Write /etc/fstab ─────────────────────────────────────────────────────────
 ROOT_UUID=$(blkid -s UUID -o value "${ROOT}")
 ESP_UUID=$(blkid  -s UUID -o value "${ESP}")
+BOOT_FSTAB_MNT="${BOOT_MNT#"${MNT}"}"   # absolute path for fstab: /boot/efi or /boot/firmware
+
+case "${DISTRO}" in
+  raspbian) BOOT_FSTAB_OPTS="defaults"   ;;
+  *)        BOOT_FSTAB_OPTS="umask=0077" ;;
+esac
 
 cat > "${MNT}/etc/fstab" <<FSTAB
-# <file system>                           <mount point> <type>  <options>          <dump> <pass>
-UUID=${ROOT_UUID}  /             ext4    errors=remount-ro  0      1
-UUID=${ESP_UUID}   /boot/efi     vfat    umask=0077         0      2
+# <file system>                           <mount point>       <type>  <options>              <dump> <pass>
+UUID=${ROOT_UUID}  /                   ext4    errors=remount-ro      0      1
+UUID=${ESP_UUID}   ${BOOT_FSTAB_MNT}  vfat    ${BOOT_FSTAB_OPTS}     0      2
 FSTAB
 
-# ── Install GRUB ─────────────────────────────────────────────────────────────
-# Run grub-install from the packager (not chroot) so it can find its modules
-# under /usr/lib/grub/. Point it at the mounted rootfs via --boot-directory
-# and --efi-directory.
-echo ">>> Installing GRUB EFI (${GRUB_EFI_TARGET})..."
-grub-install \
-  --target="${GRUB_EFI_TARGET}" \
-  --efi-directory="${MNT}/boot/efi" \
-  --boot-directory="${MNT}/boot" \
-  --bootloader-id=debian \
-  --no-nvram \
-  --removable
+# ── Install bootloader ────────────────────────────────────────────────────────
+if [ "${DISTRO}" = "raspbian" ]; then
+  # ── Raspberry Pi firmware boot ────────────────────────────────────────────
+  # The raspberrypi-bootloader package installed firmware files into
+  # /boot/firmware/ inside the rootfs; rsync already copied them to the FAT32
+  # partition (BOOT_MNT).  We still need to place the kernel and initrd on the
+  # FAT32 partition under the filenames that config.txt references.
+  echo ">>> Setting up Raspberry Pi firmware boot..."
+  KERNEL=$(find "${MNT}/boot" -maxdepth 1 -name 'vmlinuz*' ! -name '*.old' | sort -V | tail -1)
+  INITRD=$(find "${MNT}/boot" -maxdepth 1 \( -name 'initrd*' -o -name 'initramfs*' \) ! -name '*.old' | sort -V | tail -1)
+  [ -n "${KERNEL}" ] || { echo "ERROR: no kernel found in ${MNT}/boot"; exit 1; }
+  [ -n "${INITRD}" ] || { echo "ERROR: no initrd found in ${MNT}/boot"; exit 1; }
+
+  cp "${KERNEL}" "${BOOT_MNT}/kernel8.img"
+  cp "${INITRD}" "${BOOT_MNT}/initrd.img"
+
+  # config.txt — Raspberry Pi boot configuration
+  cat > "${BOOT_MNT}/config.txt" <<'RPICFG'
+[all]
+arm_64bit=1
+kernel=kernel8.img
+initramfs initrd.img followkernel
+RPICFG
+
+  # cmdline.txt — kernel command line (root identified by PARTUUID)
+  ROOT_PARTUUID=$(blkid -s PARTUUID -o value "${ROOT}")
+  printf 'console=serial0,115200 console=tty1 root=PARTUUID=%s rootfstype=ext4 fsck.repair=yes rootwait\n' \
+    "${ROOT_PARTUUID}" > "${BOOT_MNT}/cmdline.txt"
+
+else
+  # ── Standard GRUB EFI boot ───────────────────────────────────────────────
+  # Run grub-install from the packager (not chroot) so it can find its modules
+  # under /usr/lib/grub/. Point it at the mounted rootfs via --boot-directory
+  # and --efi-directory.
+  echo ">>> Installing GRUB EFI (${GRUB_EFI_TARGET})..."
+  grub-install \
+    --target="${GRUB_EFI_TARGET}" \
+    --efi-directory="${BOOT_MNT}" \
+    --boot-directory="${MNT}/boot" \
+    --bootloader-id=debian \
+    --no-nvram \
+    --removable
 
 
-# ── Generate grub.cfg ─────────────────────────────────────────────────────────
-# Write grub.cfg directly rather than using update-grub: inside the chroot
-# grub-probe sees the build-time device (/dev/mapper/loopNpX) and emits that
-# as root=, which is meaningless on the target machine. Using the UUID we
-# already have guarantees the correct root= on every boot.
-echo ">>> Generating grub.cfg..."
-# find works for both Debian (vmlinuz-6.x, initrd.img-6.x)
-# and Alpine (vmlinuz-lts, initramfs-lts)
-KERNEL=$(find "${MNT}/boot" -maxdepth 1 -name 'vmlinuz*' ! -name '*.old' | sort -V | tail -1)
-INITRD=$(find "${MNT}/boot" -maxdepth 1 \( -name 'initrd*' -o -name 'initramfs*' \) ! -name '*.old' | sort -V | tail -1)
-[ -n "${KERNEL}" ] || { echo "ERROR: no kernel found in ${MNT}/boot"; exit 1; }
-[ -n "${INITRD}" ] || { echo "ERROR: no initrd/initramfs found in ${MNT}/boot"; exit 1; }
-KERNEL="${KERNEL#"${MNT}"}"   # strip mount prefix → /boot/vmlinuz-…
-INITRD="${INITRD#"${MNT}"}"
+  # ── Generate grub.cfg ──────────────────────────────────────────────────────
+  # Write grub.cfg directly rather than using update-grub: inside the chroot
+  # grub-probe sees the build-time device (/dev/mapper/loopNpX) and emits that
+  # as root=, which is meaningless on the target machine. Using the UUID we
+  # already have guarantees the correct root= on every boot.
+  echo ">>> Generating grub.cfg..."
+  # find works for both Debian (vmlinuz-6.x, initrd.img-6.x)
+  # and Alpine (vmlinuz-lts, initramfs-lts)
+  KERNEL=$(find "${MNT}/boot" -maxdepth 1 -name 'vmlinuz*' ! -name '*.old' | sort -V | tail -1)
+  INITRD=$(find "${MNT}/boot" -maxdepth 1 \( -name 'initrd*' -o -name 'initramfs*' \) ! -name '*.old' | sort -V | tail -1)
+  [ -n "${KERNEL}" ] || { echo "ERROR: no kernel found in ${MNT}/boot"; exit 1; }
+  [ -n "${INITRD}" ] || { echo "ERROR: no initrd/initramfs found in ${MNT}/boot"; exit 1; }
+  KERNEL="${KERNEL#"${MNT}"}"   # strip mount prefix → /boot/vmlinuz-…
+  INITRD="${INITRD#"${MNT}"}"
 
-mkdir -p "${MNT}/boot/grub"
-cat > "${MNT}/boot/grub/grub.cfg" <<GRUBCFG
+  mkdir -p "${MNT}/boot/grub"
+  cat > "${MNT}/boot/grub/grub.cfg" <<GRUBCFG
 set default=0
 set timeout=5
 
@@ -141,11 +190,13 @@ menuentry "${DISTRO}" {
 }
 GRUBCFG
 
+fi
+
 # ── Shrink image to fit + 10% ─────────────────────────────────────────────────
 echo ">>> Shrinking image..."
 
 # Unmount everything before resizing the filesystem
-umount "${MNT}/boot/efi" 2>/dev/null || true
+umount "${BOOT_MNT}"  2>/dev/null || true
 umount "${MNT}/dev"      2>/dev/null || true
 umount "${MNT}/proc"     2>/dev/null || true
 umount "${MNT}/sys"      2>/dev/null || true
