@@ -27,7 +27,7 @@ jobs:
       - name: Filter to disk-image targets only
         id: matrix
         run: |
-          echo "matrix=$(echo '${{ steps.raw.outputs.matrix }}' | jq '[.[] | select(.target | startswith("disk-image-"))]')" >> $GITHUB_OUTPUT
+          echo "matrix=$(echo '${{ steps.raw.outputs.matrix }}' | jq -c '[.[] | select(.target | startswith("disk-image-"))]')" >> $GITHUB_OUTPUT
 
   build:
     needs: prepare
