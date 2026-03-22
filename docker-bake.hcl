@@ -1,21 +1,12 @@
 # docker-bake.hcl
 
-# ── Variables ─────────────────────────────────────────────────────────────────
-variable "DISTRO" {
-  default = "debian"
+variable "DISTROS" {
+  default = [
+    "alpine",
+    "debian"
+  ]
 }
 
-variable "IMAGE_SIZE" {
-  default = "4G"
-}
-
-variable "OUTPUT_DIR" {
-  default = "./output"
-}
-
-# ── Platform matrix ───────────────────────────────────────────────────────────
-# Shared platform list — inherit this in any target that should be
-# cross-compiled. The rootfs stage uses QEMU for the cross-arch apt installs.
 target "linux_platforms" {
   platforms = [
     "linux/amd64",
@@ -23,34 +14,40 @@ target "linux_platforms" {
   ]
 }
 
-# ── Groups ────────────────────────────────────────────────────────────────────
 group "default" {
   targets = ["disk-image"]
 }
 
 target "rootfs" {
+  name = "rootfs-${distro}"
+  matrix = {
+    distro = DISTROS
+  }
   inherits   = ["linux_platforms"]
   context    = "."
-  dockerfile = "${DISTRO}/Dockerfile"
-  target     = "rootfs"
+  dockerfile = "${distro}/Dockerfile"
   output     = []
 }
 
 target "disk-image" {
+  name = "disk-image-${distro}"
+  matrix = {
+    distro = DISTROS
+  }
   inherits   = ["linux_platforms"]
 
   context    = "."
   dockerfile = "Dockerfile.disk-image"
 
   contexts = {
-    "rootfs" = "target:rootfs"
+    "rootfs" = "target:rootfs-${distro}"
   }
 
   entitlements = ["security.insecure"]
 
   args = {
-    IMG_SIZE = IMAGE_SIZE
+    IMG_SIZE = "4G"
   }
 
-  output = ["${OUTPUT_DIR}/${DISTRO}"]
+  output = ["./output/${distro}"]
 }

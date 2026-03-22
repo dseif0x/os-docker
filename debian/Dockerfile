@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS rootfs
+FROM debian:bookworm-slim 
 
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
