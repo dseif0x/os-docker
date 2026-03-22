@@ -43,10 +43,7 @@ target "disk-image" {
     "rootfs" = "target:rootfs-${distro}"
   }
 
-  entitlements = ["security.insecure"]
-
   args = {
-    IMG_SIZE = "4G"
     EFI_SIZE = "64M"
     DISTRO   = distro
   }
