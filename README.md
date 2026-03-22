@@ -69,7 +69,9 @@ qemu-system-x86_64 \
 
 | Partition | Size     | Type  | Contents        |
 |-----------|----------|-------|-----------------|
-| 1         | 512 MiB  | FAT32 | EFI + GRUB      |
+| 1         | 64 MiB  | FAT32 | EFI + GRUB      |
 | 2         | variable | ext4  | root filesystem |
+
+EFI partition is 64MiB by default but can be changed: `docker buildx bake disk-image-alpine --allow=security.insecure --set "*.args.EFI_SIZE=100M"`.
 
 The root partition is shrunk to the minimum size that fits the content, plus 10% headroom.
