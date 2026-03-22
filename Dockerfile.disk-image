@@ -1,4 +1,12 @@
-# syntax=docker/dockerfile:1.4-labs
+# syntax=docker/dockerfile:1
+
+FROM golang:1.25-bookworm AS image-packer-builder
+
+WORKDIR /src/image-packer
+COPY image-packer/go.mod image-packer/go.sum ./
+RUN go mod download
+COPY image-packer/ ./
+RUN CGO_ENABLED=0 go build -o /image-packer .
 
 FROM debian:bookworm-slim AS packager
 
@@ -18,26 +26,21 @@ RUN apt-get update \
       *) echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
     esac \
  && apt-get install -y --no-install-recommends \
-      # Disk tools
-      gdisk dosfstools e2fsprogs kpartx \
-      # GRUB tools (grub-install, grub-mkimage) — modules come from the arch-specific -bin pkgs above
+      # GRUB tools (grub-mkimage) — modules come from the arch-specific -bin pkgs above
       grub2-common \
-      # Filesystem / process tools
-      mount util-linux coreutils rsync \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Pull the rootfs built for the TARGET arch in stage 1.
 # BuildKit resolves the correct platform variant automatically.
 COPY --from=rootfs / /rootfs/
 
-COPY build-image.sh /build-image.sh
-RUN chmod +x /build-image.sh
+COPY --from=image-packer-builder /image-packer /image-packer
 
 RUN mkdir -p /output
 
 ARG EFI_SIZE=512M
 ARG DISTRO=linux
-RUN --security=insecure /build-image.sh
+RUN /image-packer
 
 FROM scratch
 COPY --from=packager /output/ ./
