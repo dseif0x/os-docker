@@ -3,7 +3,8 @@
 variable "DISTROS" {
   default = [
     "alpine",
-    "debian"
+    "debian",
+    "debian-vscode"
   ]
 }
 
@@ -24,8 +25,8 @@ target "rootfs" {
     distro = DISTROS
   }
   inherits   = ["linux_platforms"]
-  context    = "."
-  dockerfile = "${distro}/Dockerfile"
+  context    = "${distro}"
+  dockerfile = "Dockerfile"
   output     = []
 }
 

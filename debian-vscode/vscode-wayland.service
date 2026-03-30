@@ -1,0 +1,22 @@
+[Unit]
+Description=VS Code in Cage (Wayland)
+After=systemd-user-sessions.service
+Conflicts=getty@tty1.service
+
+[Service]
+User=kiosk
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+ExecStart=/usr/local/bin/vscode-wayland.sh
+Restart=on-failure
+RestartSec=2
+KillMode=process
+WorkingDirectory=/home/kiosk
+
+[Install]
+WantedBy=multi-user.target
