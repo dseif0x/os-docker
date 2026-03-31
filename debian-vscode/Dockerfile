@@ -32,7 +32,7 @@ RUN echo "root:root" | chpasswd
 
 
 RUN useradd -m -s /bin/bash kiosk
-RUN usermod -aG video,input,tty kiosk
+RUN usermod -aG video,input,tty,render kiosk
 RUN echo "kiosk:kiosk" | chpasswd
 
 RUN apt update && apt install -y cage wget gnupg2 mesa-utils vulkan-tools xwayland

@@ -12,11 +12,14 @@ StandardError=journal
 TTYReset=yes
 TTYVHangup=yes
 TTYVTDisallocate=yes
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStart=/usr/local/bin/vscode-wayland.sh
 Restart=on-failure
 RestartSec=2
 KillMode=process
 WorkingDirectory=/home/kiosk
+SupplementaryGroups=tty video input render
+ExecStartPre=+/bin/sh -c 'mkdir -p /run/user/1000 && chown kiosk:kiosk /run/user/1000 && chmod 700 /run/user/1000'
 
 [Install]
 WantedBy=multi-user.target
