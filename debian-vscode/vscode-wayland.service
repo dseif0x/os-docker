@@ -6,8 +6,7 @@ Conflicts=getty@tty1.service
 [Service]
 User=kiosk
 TTYPath=/dev/tty1
-StandardInput=tty
-StandardOutput=tty
+StandardOutput=journal
 StandardError=journal
 TTYReset=yes
 TTYVHangup=yes
