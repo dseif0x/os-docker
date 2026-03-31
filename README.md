@@ -53,6 +53,24 @@ qemu-system-aarch64 \
   -device virtio-net-pci,netdev=net0
 ```
 
+To add a display (for debian-vscode for example):
+```bash
+qemu-system-aarch64 \
+  -machine virt,accel=hvf \
+  -cpu host \
+  -smp 4 \
+  -m 2048 \
+  -serial stdio \
+  -machine virt \
+  -drive "if=pflash,format=raw,file=/opt/homebrew/share/qemu/edk2-aarch64-code.fd,readonly=on" \
+  -drive "if=virtio,format=raw,file=disk.img" \
+  -device virtio-gpu \
+  -display default \
+  -device usb-ehci \
+  -device usb-kbd \
+  -device usb-mouse
+```
+
 ### amd64 (software emulation on Apple Silicon — slow)
 
 ```bash
