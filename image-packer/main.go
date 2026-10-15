@@ -8,8 +8,10 @@
 //
 // partition 2 — Linux root (ext4, full rootfs)
 //
-// Uses github.com/diskfs/go-diskfs for all disk/filesystem operations.
-// The only external tool invoked is grub-mkimage to produce the EFI binary.
+// Uses github.com/diskfs/go-diskfs for all disk/filesystem operations, so it
+// runs entirely in userspace: no loop devices, no mounts, no privileges. The
+// GRUB EFI binaries are pre-built by grub-mkimage in Dockerfile.disk-image and
+// embedded at compile time (see grub.go).
 //
 // Environment variables:
 //
@@ -64,8 +66,9 @@ func buildDiskImage() error {
 	}
 	fmt.Printf("    data: %.1f MiB  files: %d\n", float64(dataBytes)/(1<<20), fileCount)
 
-	// Add 25% metadata headroom + 64 MiB minimum margin, aligned to 1 MiB.
-	rootPartSize := roundUpMiB(maxInt64(int64(float64(dataBytes)*1.25), dataBytes+64*(1<<20)))
+	// Size the partition for the data plus ext4 metadata: 25% headroom, but at
+	// least 64 MiB of free space, rounded up to a whole MiB.
+	rootPartSize := roundUpMiB(max(int64(float64(dataBytes)*1.25), dataBytes+64*(1<<20)))
 	fmt.Printf("    ext4 partition: %.1f MiB\n", float64(rootPartSize)/(1<<20))
 
 	// ── GPT sector layout ────────────────────────────────────────────────────
@@ -139,7 +142,7 @@ func buildDiskImage() error {
 			UUID:            &rootFSUUID,
 			VolumeName:      "root",
 			InodeRatio:      4096, // more inodes for distros with many small files
-			SectorsPerBlock: 8,   // 4 KiB blocks — standard ext4 size; avoids multi-level extent tree bug in go-diskfs for large files
+			SectorsPerBlock: 8,    // 4 KiB blocks: standard ext4 size, and fewer extents per file (see copyRegularFile)
 		},
 	)
 	if err != nil {
@@ -159,11 +162,14 @@ func buildDiskImage() error {
 	}
 
 	// ── Write /etc/fstab ─────────────────────────────────────────────────────
+	// The ESP is referenced by PARTUUID and not fsck'd at boot (pass 0): it is
+	// only read by firmware/GRUB, and busybox fsck (Alpine) cannot resolve
+	// PARTUUID= specs, which would abort OpenRC's boot runlevel.
 	fmt.Println(">>> Writing /etc/fstab...")
 	fstab := fmt.Sprintf(
 		"# <file system>                           <mount point>  <type>  <options>           <dump>  <pass>\n"+
 			"UUID=%-36s  /              ext4    errors=remount-ro   0       1\n"+
-			"PARTUUID=%-32s  /boot/efi      vfat    umask=0077,nofail   0       2\n",
+			"PARTUUID=%-32s  /boot/efi      vfat    umask=0077,nofail   0       0\n",
 		rootFSUUID.String(),
 		efiPartGUID.String(),
 	)
@@ -171,8 +177,8 @@ func buildDiskImage() error {
 		return fmt.Errorf("write fstab: %w", err)
 	}
 
-	// ── Build GRUB EFI binary + grub.cfg ─────────────────────────────────────
-	if err := buildGRUBEFI(efiFS, cfg.GRUBArch, cfg.EFIBootFilename); err != nil {
+	// ── Write GRUB EFI binary + grub.cfg ─────────────────────────────────────
+	if err := writeGRUBEFI(efiFS, cfg.GRUBArch, cfg.EFIBootFilename); err != nil {
 		return err
 	}
 	if err := writeGRUBConfig(efiFS, cfg.Distro, kernelRel, initrdRel, rootFSUUID); err != nil {

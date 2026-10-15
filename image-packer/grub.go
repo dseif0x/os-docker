@@ -17,9 +17,10 @@ var grubEFIx64 []byte
 //go:embed efi/bootaa64.efi
 var grubEFIaa64 []byte
 
-// buildGRUBEFI writes the pre-built GRUB EFI binary for grubArch into the
-// FAT32 filesystem at EFI/BOOT/<efiBootFilename>.
-func buildGRUBEFI(efiFS filesystem.FileSystem, grubArch, efiBootFilename string) error {
+// writeGRUBEFI writes the pre-built GRUB EFI binary for grubArch into the
+// FAT32 filesystem at EFI/BOOT/<efiBootFilename>, the removable-media
+// fallback path that every UEFI firmware tries without needing NVRAM entries.
+func writeGRUBEFI(efiFS filesystem.FileSystem, grubArch, efiBootFilename string) error {
 	fmt.Printf(">>> Writing GRUB EFI binary (%s)...\n", grubArch)
 
 	var efiData []byte

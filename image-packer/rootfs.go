@@ -126,7 +126,7 @@ func copyRootfsToExt4(srcDir string, dstFS filesystem.FileSystem, skipDirs map[s
 				return err
 			}
 
-		// Everything else (devices, named pipes, sockets) is skipped.
+			// Everything else (devices, named pipes, sockets) is skipped.
 		}
 		return nil
 	})
@@ -149,7 +149,7 @@ func copyRegularFile(srcPath, dstPath string, dstFS filesystem.FileSystem, mode 
 	// Write in one shot so go-diskfs allocates a single contiguous extent
 	// for the whole file. Incremental writes (e.g. via io.Copy) create one
 	// extent per chunk and exhaust the 4 inline inode slots, triggering a
-	// multi-level extent tree that is unimplemented in go-diskfs v1.8.0.
+	// multi-level extent tree that go-diskfs (as of v1.8.x) cannot write.
 	if _, err := dst.Write(data); err != nil {
 		return fmt.Errorf("copy %s: %w", dstPath, err)
 	}

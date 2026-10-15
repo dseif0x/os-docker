@@ -11,10 +11,3 @@ func roundUpMiB(n int64) int64 {
 	const mib = 1 << 20
 	return ((n + mib - 1) / mib) * mib
 }
-
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}

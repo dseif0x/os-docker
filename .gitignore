@@ -1,2 +1,5 @@
 output/
 image-packer/image-packer
+image-packer/efi/
+image-packer/.idea/
+.claude/settings.local.json

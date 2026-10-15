@@ -1,114 +1,116 @@
 #!/usr/bin/env bash
-# test.sh — boot a disk image in QEMU on an Apple M1 (arm64 host)
+# test.sh — boot a built disk image in QEMU.
 #
 # Usage:
-#   ./test.sh arm64          # boot output/arm64/disk.img  (native HVF, fast)
-#   ./test.sh amd64          # boot output/amd64/disk.img  (TCG emulation, slow)
-#   ./test.sh arm64 path/to/other.img
-#   ./test.sh amd64 path/to/other.img
+#   ./test.sh <distro> [arch] [--gui]
 #
-# Prerequisites:
-#   brew install qemu
-#   # For EFI firmware (arm64):
-#   brew install qemu   # ships edk2-aarch64-code.fd
-#   # For EFI firmware (amd64):
-#   brew install ovmf   # or: brew install qemu (ships edk2-x86_64-code.fd)
+#   distro   alpine | debian | debian-vscode   (any directory under output/)
+#   arch     arm64 | amd64                     (default: host architecture)
+#   --gui    attach a virtio GPU + USB keyboard/mouse window (debian-vscode)
+#
+# Examples:
+#   ./test.sh alpine                 # output/alpine/{linux_arm64/,}disk.img
+#   ./test.sh debian amd64           # x86_64 under TCG emulation (slow)
+#   ./test.sh debian-vscode --gui
+#   IMG=path/to/disk.img ./test.sh alpine arm64
+#
+# Environment overrides: IMG (image path), MEM (MiB, default 2048), CPUS (default 4).
+# The serial console is on this terminal; press Ctrl-A X to quit QEMU.
 
 set -euo pipefail
 
-ARCH="${1:-arm64}"
-IMG="${2:-}"
+usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-1}"; }
 
-# ── Resolve image path ────────────────────────────────────────────────────────
-if [[ -z "${IMG}" ]]; then
-  IMG="output/${ARCH}/disk.img"
+DISTRO=""
+ARCH=""
+GUI=0
+for arg in "$@"; do
+  case "${arg}" in
+    --gui|-g)       GUI=1 ;;
+    -h|--help)      usage 0 ;;
+    arm64|amd64)    ARCH="${arg}" ;;
+    -*)             echo "Unknown option: ${arg}" >&2; usage ;;
+    *)              [[ -z "${DISTRO}" ]] && DISTRO="${arg}" || { echo "Unexpected argument: ${arg}" >&2; usage; } ;;
+  esac
+done
+[[ -n "${DISTRO}" ]] || usage
+
+HOST_OS=$(uname -s)
+case "$(uname -m)" in
+  arm64|aarch64) HOST_ARCH=arm64 ;;
+  x86_64)        HOST_ARCH=amd64 ;;
+  *)             HOST_ARCH="" ;;
+esac
+ARCH="${ARCH:-${HOST_ARCH:-arm64}}"
+MEM="${MEM:-2048}"
+CPUS="${CPUS:-4}"
+
+# ── Locate the disk image ─────────────────────────────────────────────────────
+# bake writes output/<distro>/disk.img for a single-platform build and
+# output/<distro>/linux_<arch>/disk.img when building several platforms at once.
+if [[ -z "${IMG:-}" ]]; then
+  for candidate in "output/${DISTRO}/linux_${ARCH}/disk.img" "output/${DISTRO}/disk.img"; do
+    [[ -f "${candidate}" ]] && IMG="${candidate}" && break
+  done
 fi
-
-if [[ ! -f "${IMG}" ]]; then
-  echo "Error: disk image not found: ${IMG}"
-  echo "Build it first with:"
-  echo "  docker buildx bake --allow=security.insecure disk-image-${ARCH}"
+if [[ -z "${IMG:-}" || ! -f "${IMG}" ]]; then
+  echo "Error: no disk image for ${DISTRO}/${ARCH} under output/. Build it with:" >&2
+  echo "  docker buildx bake disk-image-${DISTRO} --set '*.platform=linux/${ARCH}'" >&2
   exit 1
 fi
 
-# ── Find QEMU EFI firmware ────────────────────────────────────────────────────
-# Homebrew puts these in different places depending on version/platform.
-find_firmware() {
-  local candidates=("$@")
-  for f in "${candidates[@]}"; do
-    [[ -f "${f}" ]] && echo "${f}" && return
-  done
-  echo ""
-}
-
-# ── Launch ────────────────────────────────────────────────────────────────────
+# ── Locate EDK2 firmware ──────────────────────────────────────────────────────
 case "${ARCH}" in
-
-  arm64)
-    # Native execution via Apple Hypervisor.framework — near bare-metal speed.
-    # HVF is the macOS equivalent of KVM; no CPU emulation overhead.
-    FIRMWARE=$(find_firmware \
-      "$(brew --prefix)/share/qemu/edk2-aarch64-code.fd" \
-      "/opt/homebrew/share/qemu/edk2-aarch64-code.fd" \
-      "/usr/local/share/qemu/edk2-aarch64-code.fd" \
-    )
-
-    if [[ -z "${FIRMWARE}" ]]; then
-      echo "Error: aarch64 EFI firmware not found. Try: brew install qemu"
-      exit 1
-    fi
-
-    echo ">>> Booting arm64 image (HVF accelerated)..."
-    echo "    Image:    ${IMG}"
-    echo "    Firmware: ${FIRMWARE}"
-    echo "    Console:  serial (Ctrl-A X to quit)"
-    echo ""
-
-    qemu-system-aarch64 \
-      -machine virt,accel=hvf \
-      -cpu host \
-      -smp 4 \
-      -m 2048 \
-      -drive "if=pflash,format=raw,file=${FIRMWARE},readonly=on" \
-      -drive "if=virtio,format=raw,file=${IMG}" \
-      -nographic \
-      -serial mon:stdio
-    ;;
-
-  amd64)
-    # Full x86_64 TCG emulation — no hardware acceleration available on M1.
-    # This is slow (roughly 10-20% of native speed) but fully functional.
-    # Expect boot to take 1-3 minutes.
-    FIRMWARE=$(find_firmware \
-      "$(brew --prefix)/share/qemu/edk2-x86_64-code.fd" \
-      "/opt/homebrew/share/qemu/edk2-x86_64-code.fd" \
-      "/usr/local/share/qemu/edk2-x86_64-code.fd" \
-    )
-
-    if [[ -z "${FIRMWARE}" ]]; then
-      echo "Error: x86_64 EFI firmware not found. Try: brew install qemu"
-      exit 1
-    fi
-
-    echo ">>> Booting amd64 image (TCG software emulation — this is slow)..."
-    echo "    Image:    ${IMG}"
-    echo "    Firmware: ${FIRMWARE}"
-    echo "    Console:  serial (Ctrl-A X to quit)"
-    echo ""
-
-    qemu-system-x86_64 \
-      -machine q35 \
-      -cpu qemu64 \
-      -smp 2 \
-      -m 2048 \
-      -drive "if=pflash,format=raw,file=${FIRMWARE},readonly=on" \
-      -drive "if=virtio,format=raw,file=${IMG}" \
-      -nographic \
-      -serial mon:stdio
-    ;;
-
-  *)
-    echo "Usage: $0 [arm64|amd64] [image-path]"
-    exit 1
-    ;;
+  arm64) QEMU=qemu-system-aarch64; FW_NAME=edk2-aarch64-code.fd ;;
+  amd64) QEMU=qemu-system-x86_64;  FW_NAME=edk2-x86_64-code.fd  ;;
 esac
+FW_DIRS=(/opt/homebrew/share/qemu /usr/local/share/qemu /usr/share/qemu /usr/share/edk2/aarch64 /usr/share/OVMF)
+command -v brew >/dev/null 2>&1 && FW_DIRS=("$(brew --prefix)/share/qemu" "${FW_DIRS[@]}")
+FIRMWARE=""
+for dir in "${FW_DIRS[@]}"; do
+  [[ -f "${dir}/${FW_NAME}" ]] && FIRMWARE="${dir}/${FW_NAME}" && break
+done
+if [[ -z "${FIRMWARE}" ]]; then
+  echo "Error: ${FW_NAME} not found (looked in: ${FW_DIRS[*]}). Try: brew install qemu" >&2
+  exit 1
+fi
+
+# ── Pick an accelerator ───────────────────────────────────────────────────────
+# Native arch gets hardware virtualisation (HVF on macOS, KVM on Linux);
+# anything else falls back to TCG software emulation, which is slow.
+ACCEL=tcg
+if [[ "${ARCH}" == "${HOST_ARCH}" ]]; then
+  case "${HOST_OS}" in
+    Darwin) ACCEL=hvf ;;
+    Linux)  [[ -w /dev/kvm ]] && ACCEL=kvm ;;
+  esac
+fi
+
+# ── Assemble the QEMU command line ────────────────────────────────────────────
+case "${ARCH}" in
+  arm64) MACHINE_ARGS=(-machine "virt,accel=${ACCEL}" -cpu "$([[ ${ACCEL} == tcg ]] && echo max || echo host)"); GPU=virtio-gpu-pci ;;
+  amd64) MACHINE_ARGS=(-machine "q35,accel=${ACCEL}"  -cpu "$([[ ${ACCEL} == tcg ]] && echo qemu64 || echo host)"); GPU=virtio-vga ;;
+esac
+
+ARGS=(
+  "${MACHINE_ARGS[@]}"
+  -smp "${CPUS}"
+  -m "${MEM}"
+  -drive "if=pflash,format=raw,file=${FIRMWARE},readonly=on"
+  -drive "if=virtio,format=raw,file=${IMG}"
+  -netdev user,id=net0
+  -device virtio-net-pci,netdev=net0
+  -serial mon:stdio
+)
+if (( GUI )); then
+  ARGS+=(-display default -device "${GPU}" -device qemu-xhci -device usb-kbd -device usb-tablet)
+else
+  ARGS+=(-nographic)
+fi
+
+echo ">>> Booting ${DISTRO} (${ARCH}, accel=${ACCEL}$( (( GUI )) && echo ", gui"))"
+echo "    Image:    ${IMG}"
+echo "    Firmware: ${FIRMWARE}"
+echo "    Console:  serial on this terminal (Ctrl-A X to quit)"
+echo
+exec "${QEMU}" "${ARGS[@]}"
